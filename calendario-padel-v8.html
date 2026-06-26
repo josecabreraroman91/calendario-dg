@@ -801,7 +801,16 @@ async function syncContactos(){
     const text=await res.text();
     const rows=parseCSV(text);
     if(rows.length<2) throw new Error('hoja vacía o sin datos');
-    _syncRows=rows; _syncHeaders=rows[0];
+    // Detectar la FILA de encabezados (puede no ser la primera si hay filas vacías/título arriba)
+    let headRow=0;
+    for(let r=0;r<Math.min(rows.length,8);r++){
+      const hh=rows[r].map(x=>normName(x));
+      const tieneNombre=hh.some(h=>h.indexOf('alumno')>-1 || h.indexOf('nombre')>-1);
+      const tieneTel=hh.some(h=>h.indexOf('telefono')>-1 || h.indexOf('tel')>-1 || h.indexOf('celular')>-1);
+      if(tieneNombre && tieneTel){ headRow=r; break; }
+    }
+    _syncHeaders=rows[headRow];
+    _syncRows=rows.slice(headRow); // los datos arrancan en la fila de encabezados (índice 0 = headers)
     // columnas: usar las guardadas si existen, si no autodetectar
     let iNom = state.colNombre ? _syncHeaders.findIndex(h=>h===state.colNombre) : -1;
     let iTel = state.colTel ? _syncHeaders.findIndex(h=>h===state.colTel) : -1;
@@ -832,9 +841,9 @@ function poblarColPickers(iNom,iTel){
 // Arma el mapa de contactos desde el cache con las columnas elegidas
 function construirContactos(iNom,iTel){
   const iApo=findCol(_syncHeaders,['apodo','nombre_wpp','alias']);
-  const iCat=findCol(_syncHeaders,['categor','nivel']);
+  const iCat=findCol(_syncHeaders,['categor','ategor','nivel','cat']);
   const iLado=findCol(_syncHeaders,['lado']);
-  const iTipo=findCol(_syncHeaders,['tipo de clase','tipo_clase','modalidad','tipo']);
+  const iTipo=findCol(_syncHeaders,['tipo de clase','tipo_clase','tipo de','modalidad','tipo']);
   state.colNombre=_syncHeaders[iNom]; state.colTel=_syncHeaders[iTel];
   // normaliza el tipo de clase del Sheet a G/D/IND
   const normTipo=(v)=>{
