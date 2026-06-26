@@ -148,6 +148,24 @@
   .ev-nav{display:flex;gap:8px;margin-top:8px}
   .ev-nav .btn{flex:1}
   .ev-empty{text-align:center;color:var(--muted);padding:40px 16px}
+
+  /* lista completa de envíos */
+  .ev-listbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+  .ev-listbar .btn{flex:1;min-width:130px;padding:11px}
+  .ev-list{border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .ev-hsep{background:#101319;color:var(--muted);font-size:12px;font-weight:700;padding:6px 10px;border-bottom:1px solid var(--line);position:sticky;top:0}
+  .ev-row{display:flex;align-items:center;gap:10px;padding:9px 10px;border-bottom:1px solid #1c2129;cursor:pointer}
+  .ev-row:last-child{border-bottom:none}
+  .ev-row.active{background:#1b2433;box-shadow:inset 3px 0 0 var(--accent)}
+  .ev-row.sent{opacity:.5}
+  .ev-chk{width:26px;height:26px;border-radius:50%;border:1px solid #2a4a3a;background:#1c2a22;color:#7df0aa;font-size:14px;cursor:pointer;flex-shrink:0;padding:0;display:flex;align-items:center;justify-content:center}
+  .ev-chk.on{background:#2fd071;color:#0c2a18;border-color:#2fd071}
+  .ev-info{flex:1;min-width:0}
+  .ev-nm{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ev-nm .mini.ok{color:#2fd071}
+  .ev-meta{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ev-wa{width:38px;height:38px;border-radius:8px;border:1px solid #25d366;background:#16361f;color:#25d366;font-size:18px;cursor:pointer;flex-shrink:0}
+  .ev-wa:hover{background:#1d5a30}
 </style>
 </head>
 <body class="modo-semana">
@@ -1060,45 +1078,72 @@ function renderEnvios(){
 
   const body=document.getElementById('evQueue');
   if(!all.length){ body.innerHTML='<div class="ev-empty"><h3>No hay alumnos en '+state.dia+'</h3><p>Cargá alumnos en el calendario primero.</p></div>'; return; }
-  if(!s.length){ body.innerHTML='<div class="ev-empty"><h3>Nadie tiene teléfono cruzado</h3><p>Sincronizá la hoja ALUMNOS con el botón 📞 Teléfonos del calendario.</p></div>'; return; }
+  if(!s.length){ body.innerHTML='<div class="ev-empty"><h3>Nadie tiene teléfono cruzado</h3><p>Sincronizá la hoja ALUMNOS con el botón 🔄 Sincronizar del calendario.</p></div>'; return; }
   if(evQueueIdx<0) evQueueIdx=0; if(evQueueIdx>=s.length) evQueueIdx=s.length-1;
 
-  const c=s[evQueueIdx]; const sent2=isEnviado(c);
-  const msgHtml=buildMsg(c).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/\*(.+?)\*/g,'<b>$1</b>');
-  body.innerHTML=
-    '<div class="ticket'+(sent2?' done':'')+'">'+
-      '<div class="ticket-head"><div class="t-name">'+esc(c.nombre)+'</div><div class="t-pos">'+(evQueueIdx+1)+' / '+s.length+'</div></div>'+
-      '<div class="t-tags">'+
-        '<span class="tag"><span class="k">Hora</span>'+esc(c.hora)+'</span>'+
-        '<span class="tag"><span class="k">Sede</span>'+esc(c.sede)+'</span>'+
-        '<span class="tag"><span class="k">Profe</span>'+esc(c.profesor)+'</span>'+
-        '<span class="tag"><span class="k">Tel</span>+'+esc(c.tel)+'</span>'+
-        (c.confirmado?'<span class="badge sent">✅ Confirmó</span>':'')+
-        (sent2?'<span class="badge sent">Enviado</span>':'<span class="badge pend">Pendiente</span>')+
-      '</div>'+
-      '<div class="preview">'+msgHtml+'</div>'+
-      '<div class="ev-actions">'+
-        '<button class="btn btn-wa" id="evOpen">Abrir chat</button>'+
-        (sent2?'<button class="btn" id="evUnsent">Marcar pendiente</button>'
-              :'<button class="btn primary" id="evNext">Enviado → siguiente</button>')+
-      '</div>'+
-      '<div class="ev-nav"><button class="btn" id="evPrev">←</button><button class="btn" id="evFwd">→</button></div>'+
-      '<div class="hint"><b>Enter</b> abre el chat · <b>Espacio</b> marca enviado y pasa al siguiente · <b>← →</b> navegar</div>'+
-    '</div>';
-  document.getElementById('evOpen').onclick=()=>openChat(c);
-  if(document.getElementById('evNext')) document.getElementById('evNext').onclick=()=>{ markEnviado(c,true); gotoNextPending(true); };
-  if(document.getElementById('evUnsent')) document.getElementById('evUnsent').onclick=()=>{ markEnviado(c,false); renderEnvios(); };
-  document.getElementById('evPrev').onclick=()=>{ if(evQueueIdx>0){ evQueueIdx--; renderEnvios(); } };
-  document.getElementById('evFwd').onclick=()=>{ if(evQueueIdx<s.length-1){ evQueueIdx++; renderEnvios(); } };
+  // Barra de acciones fija arriba de la lista
+  let html=
+    '<div class="ev-listbar">'+
+      '<button class="btn btn-wa" id="evSendNext">📲 Mandar al siguiente pendiente</button>'+
+      '<button class="btn" id="evMarkAll">Marcar todos enviados</button>'+
+      '<button class="btn" id="evClear">Reiniciar enviados de hoy</button>'+
+    '</div>'+
+    '<div class="hint" style="text-align:left;margin:0 0 8px"><b>Espacio</b> = mandar al siguiente pendiente · <b>Enter</b> = abrir el chat de la fila marcada · <b>↑ ↓</b> moverse · tocá una fila para elegirla</div>'+
+    '<div class="ev-list">';
+
+  let horaPrev=null;
+  s.forEach((c,i)=>{
+    if(c.hora!==horaPrev){ html+='<div class="ev-hsep">🕐 '+esc(c.hora)+'</div>'; horaPrev=c.hora; }
+    const en=isEnviado(c);
+    html+=
+      '<div class="ev-row'+(en?' sent':'')+(i===evQueueIdx?' active':'')+'" data-i="'+i+'">'+
+        '<button class="ev-chk'+(en?' on':'')+'" data-toggle="'+i+'" title="Marcar enviado">'+(en?'✓':'')+'</button>'+
+        '<div class="ev-info">'+
+          '<div class="ev-nm">'+esc(c.nombre)+(c.confirmado?' <span class="mini ok">✅</span>':'')+'</div>'+
+          '<div class="ev-meta">'+esc(c.profesor)+' · '+esc(c.sede)+' · +'+esc(c.tel)+'</div>'+
+        '</div>'+
+        '<button class="ev-wa" data-wa="'+i+'" title="Abrir chat">💬</button>'+
+      '</div>';
+  });
+  html+='</div>';
+  body.innerHTML=html;
+
+  // Listeners
+  document.getElementById('evSendNext').onclick=()=>{ gotoNextPending(true); };
+  document.getElementById('evMarkAll').onclick=()=>{ if(confirm('¿Marcar TODOS como enviados?')){ s.forEach(c=>markEnviado(c,true)); renderEnvios(); } };
+  document.getElementById('evClear').onclick=()=>{ if(confirm('¿Reiniciar los enviados de hoy? (no manda nada, solo limpia las marcas)')){ const e=enviadosHoy(); Object.keys(e).forEach(k=>delete e[k]); saveState(); renderEnvios(); } };
+  body.querySelectorAll('.ev-row').forEach(r=>{
+    r.onclick=(e)=>{ if(e.target.closest('.ev-chk')||e.target.closest('.ev-wa')) return; evQueueIdx=+r.dataset.i; renderEnvios(); };
+  });
+  body.querySelectorAll('.ev-chk').forEach(b=>{
+    b.onclick=(e)=>{ e.stopPropagation(); const i=+b.dataset.toggle; markEnviado(s[i], !isEnviado(s[i])); renderEnvios(); };
+  });
+  body.querySelectorAll('.ev-wa').forEach(b=>{
+    b.onclick=(e)=>{ e.stopPropagation(); const i=+b.dataset.wa; evQueueIdx=i; openChat(s[i]); renderEnvios(); };
+  });
+  // asegurar que la fila activa quede visible
+  const act=body.querySelector('.ev-row.active'); if(act) act.scrollIntoView({block:'nearest'});
 }
 function gotoNextPending(openIt){
-  const s=buildEnvioList().filter(c=>phoneOk(c.tel)); const start=evQueueIdx;
+  const s=buildEnvioList().filter(c=>phoneOk(c.tel));
+  if(!s.length) return;
+  // buscar el primer pendiente desde la posición actual
+  let found=-1;
+  for(let step=0;step<s.length;step++){
+    const i=(evQueueIdx+step)%s.length;
+    if(!isEnviado(s[i])){ found=i; break; }
+  }
+  if(found<0){ alert('✅ Ya enviaste a todos los del día. ¡Listo!'); return; }
+  evQueueIdx=found;
+  const c=s[found];
+  if(openIt) openChat(c);
+  markEnviado(c,true);
+  // mover el cursor al próximo pendiente para el siguiente Espacio
   for(let step=1;step<=s.length;step++){
-    const i=(start+step)%s.length;
-    if(!isEnviado(s[i])){ evQueueIdx=i; renderEnvios(); if(openIt) openChat(s[i]); return; }
+    const i=(found+step)%s.length;
+    if(!isEnviado(s[i])){ evQueueIdx=i; break; }
   }
   renderEnvios();
-  alert('✅ No quedan pendientes. ¡Listo!');
 }
 function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
@@ -1131,9 +1176,9 @@ document.addEventListener('keydown', (e)=>{
   if(!s.length) return;
   const c = s[Math.max(0, Math.min(evQueueIdx, s.length-1))];
   if(e.key==='Enter'){ e.preventDefault(); openChat(c); }
-  else if(e.key===' '){ e.preventDefault(); markEnviado(c,true); gotoNextPending(true); }
-  else if(e.key==='ArrowLeft'){ e.preventDefault(); if(evQueueIdx>0){ evQueueIdx--; renderEnvios(); } }
-  else if(e.key==='ArrowRight'){ e.preventDefault(); if(evQueueIdx<s.length-1){ evQueueIdx++; renderEnvios(); } }
+  else if(e.key===' '){ e.preventDefault(); gotoNextPending(true); }
+  else if(e.key==='ArrowUp'){ e.preventDefault(); if(evQueueIdx>0){ evQueueIdx--; renderEnvios(); } }
+  else if(e.key==='ArrowDown'){ e.preventDefault(); if(evQueueIdx<s.length-1){ evQueueIdx++; renderEnvios(); } }
   else if(e.key==='Escape'){ e.preventDefault(); closeEnvios(); }
 });
 document.getElementById('evCSV').onclick=exportEnvios;
