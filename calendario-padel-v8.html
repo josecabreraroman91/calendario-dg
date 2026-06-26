@@ -571,7 +571,7 @@ function openEditor(cellId){
   document.getElementById('fMod').value=al.mod||'';
   document.getElementById('fNota').value=al.nota||'';
   actualizarHintTel();
-  inp.oninput=actualizarHintTel;
+  inp.oninput=()=>{ actualizarHintTel(); autocompletarDesdeNube(); };
   document.getElementById('overlay').classList.add('show');
 }
 // Muestra si el alumno escrito tiene teléfono en la base sincronizada
@@ -583,6 +583,15 @@ function actualizarHintTel(){
   if(c && c.tel) hint.textContent='· 📞 con teléfono';
   else if(c) hint.textContent='· ⚠️ sin teléfono en la hoja';
   else hint.textContent='· nuevo (no está en la nube)';
+}
+// Si el nombre coincide exacto con un alumno de la nube, trae sus datos (categoría, lado, tipo)
+function autocompletarDesdeNube(){
+  const nombre=document.getElementById('fNombre').value.trim();
+  const c=state.contactos[normName(nombre)];
+  if(!c) return; // alumno nuevo: no toca nada
+  if(c.nivel!==undefined) document.getElementById('fNivel').value=c.nivel||'';
+  if(c.lado!==undefined)  document.getElementById('fLado').value=c.lado||'';
+  if(c.mod!==undefined)   document.getElementById('fMod').value=c.mod||'';
 }
 function closeEditor(){ document.getElementById('overlay').classList.remove('show'); editingCell=null; }
 function saveEditor(){
@@ -823,17 +832,44 @@ function poblarColPickers(iNom,iTel){
 // Arma el mapa de contactos desde el cache con las columnas elegidas
 function construirContactos(iNom,iTel){
   const iApo=findCol(_syncHeaders,['apodo','nombre_wpp','alias']);
+  const iCat=findCol(_syncHeaders,['categor','nivel']);
+  const iLado=findCol(_syncHeaders,['lado']);
+  const iTipo=findCol(_syncHeaders,['tipo de clase','tipo_clase','modalidad','tipo']);
   state.colNombre=_syncHeaders[iNom]; state.colTel=_syncHeaders[iTel];
+  // normaliza el tipo de clase del Sheet a G/D/IND
+  const normTipo=(v)=>{
+    const s=normName(v);
+    if(!s) return '';
+    if(s.indexOf('ind')>-1) return 'IND';
+    if(s.charAt(0)==='d') return 'D';
+    if(s.charAt(0)==='g') return 'G';
+    return v.trim().toUpperCase();
+  };
+  const normLado=(v)=>{
+    const s=normName(v);
+    if(s.indexOf('amb')>-1) return 'AMB';
+    if(s.indexOf('rev')>-1) return 'REV';
+    if(s.indexOf('drv')>-1||s.indexOf('dri')>-1) return 'DRV';
+    return v.trim().toUpperCase();
+  };
   const map={}; let n=0;
   for(let r=1;r<_syncRows.length;r++){
     const nombre=(_syncRows[r][iNom]||'').trim();
     const tel=(_syncRows[r][iTel]||'').trim();
     if(!nombre) continue;
-    map[normName(nombre)]={tel, apodo:(iApo>-1?(_syncRows[r][iApo]||'').trim():''), nombre};
+    map[normName(nombre)]={
+      tel, nombre,
+      apodo:(iApo>-1?(_syncRows[r][iApo]||'').trim():''),
+      nivel:(iCat>-1?(_syncRows[r][iCat]||'').trim():''),
+      lado:(iLado>-1?normLado(_syncRows[r][iLado]||''):''),
+      mod:(iTipo>-1?normTipo(_syncRows[r][iTipo]||''):'')
+    };
     if(tel) n++;
   }
   state.contactos=map;
-  state.contactosInfo='✅ '+Object.keys(map).length+' alumnos sincronizados · '+n+' con teléfono. Ya disponibles en el buscador.';
+  const extra=[];
+  if(iCat>-1) extra.push('categoría'); if(iLado>-1) extra.push('lado'); if(iTipo>-1) extra.push('tipo');
+  state.contactosInfo='✅ '+Object.keys(map).length+' alumnos sincronizados · '+n+' con teléfono'+(extra.length?' · trae: '+extra.join(', '):'')+'. Ya disponibles en el buscador.';
   saveState();
   document.getElementById('telStatus').textContent=state.contactosInfo;
   fillAlumnosDatalist();
