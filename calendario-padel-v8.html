@@ -348,7 +348,7 @@
 const DAYS = ['LUNES','MARTES','MIERCOLES','JUEVES','VIERNES','SABADO'];
 const HORAS = ['6:00','7:00','8:00','9:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00','19:00','20:00','21:00'];
 const SLOTS_POR_HORA = 4;
-const DEFAULT_SHEET_ID = '1T8Ru8L4SdhgY_6mTSnoyEM0TNbPQgl153o-17VrmC_I';
+const DEFAULT_SHEET_ID = '1Ux1uQJ31EpxnWafAIJw0cuzS2B2vfuv--LUfDA4bVqc';
 const DEFAULT_SHEET_TAB = 'ALUMNOS';
 // Diminutivos disponibles para los desplegables (derivados de la lista de profesores)
 function profesDisp(){ return state.profesores.map(p=>p.dim).concat(['—']); }
@@ -872,6 +872,7 @@ function construirContactos(iNom,iTel){
   const iCat=findCol(_syncHeaders,['categor','ategor','nivel','cat']);
   const iLado=findCol(_syncHeaders,['lado']);
   const iTipo=findCol(_syncHeaders,['tipo de clase','tipo_clase','tipo de','modalidad','tipo']);
+  const iWpp=findCol(_syncHeaders,['nombre_calendario','nombre calendario','nombre p/ horario','nombre p horario','nombre p/horario','nombre wpp','nombre_wpp']);
   state.colNombre=_syncHeaders[iNom]; state.colTel=_syncHeaders[iTel];
   // normaliza el tipo de clase del Sheet a G/D/IND
   const normTipo=(v)=>{
@@ -897,6 +898,7 @@ function construirContactos(iNom,iTel){
     map[normName(nombre)]={
       tel, nombre,
       apodo:(iApo>-1?(_syncRows[r][iApo]||'').trim():''),
+      nombreWpp:(iWpp>-1?(_syncRows[r][iWpp]||'').trim():''),
       nivel:(iCat>-1?(_syncRows[r][iCat]||'').trim():''),
       lado:(iLado>-1?normLado(_syncRows[r][iLado]||''):''),
       mod:(iTipo>-1?normTipo(_syncRows[r][iTipo]||''):'')
@@ -1026,6 +1028,7 @@ function buildEnvioList(){
           out.push({
             sesion_id:`S_${state.dia}_${hhmm}_${dim}_${si}`,
             nombre:al.nombre,
+            nombreWpp: (c&&c.nombreWpp)?c.nombreWpp:'',
             hora, sede:s.nombre, sedeKey:s.key, profesor:dim,
             tel: c ? normPhone(c.tel) : '',
             confirmado: !!al.confirmado
@@ -1051,8 +1054,9 @@ function isEnviado(c){ return !!enviadosHoy()[c.sesion_id]; }
 function markEnviado(c,val){ const e=enviadosHoy(); if(val) e[c.sesion_id]=true; else delete e[c.sesion_id]; saveState(); }
 
 function buildMsg(c){
+  const nombreMsg = (c.nombreWpp && c.nombreWpp.trim()) ? c.nombreWpp.trim() : (c.nombre||'').trim().split(/\s+/)[0];
   return (state.tplEnvio||'')
-    .replace(/\{nombre\}/g, (c.nombre||'').trim().split(/\s+/)[0])
+    .replace(/\{nombre\}/g, nombreMsg)
     .replace(/\{hora\}/g, c.hora||'')
     .replace(/\{club\}/g, c.sede||'')
     .replace(/\{sede\}/g, c.sede||'')
